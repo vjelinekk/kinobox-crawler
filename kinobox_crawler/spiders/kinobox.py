@@ -1,5 +1,6 @@
 import scrapy
-import logging
+import playwright
+from scrapy_playwright.page import PageMethod
 
 
 class KinoboxSpider(scrapy.Spider):
@@ -15,11 +16,11 @@ class KinoboxSpider(scrapy.Spider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
+        "LOG_LEVEL": "ERROR",
+        'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+        'RETRY_TIMES': 5,  # Retry up to 5 times
+        'RETRY_HTTP_CODES': [429],  # Retry on 429 status code
     }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        logging.getLogger("playwright").setLevel(logging.WARNING)
 
     def start_requests(self):
         for url in self.start_urls:
@@ -61,9 +62,9 @@ class KinoboxSpider(scrapy.Spider):
             for role in response.xpath('//section//div[@class="FilmPageOverviewContainer_castInfo__aPQjG"]//a')
             if role.xpath("normalize-space(.)").get()
         ]
-        director = roles[0]
-        screenwriter = roles[1]
-        music = roles[2]
+        director = roles[0] if len(roles) > 0 else None
+        screenwriter = roles[1] if len(roles) > 1 else None
+        music = roles[2] if len(roles) > 2 else None
 
         movie_data = {
             "title": title,
@@ -78,19 +79,27 @@ class KinoboxSpider(scrapy.Spider):
             "music": music
         }
 
-        comments_url = response.xpath('//ul[@role = "list"]/li[4]/a/@href').get()
+        comments_url = response.xpath('//ul[@role="list"]/li//i[@title="Komentáře"]/../../../@href').get()
         if comments_url:
             yield response.follow(
                 comments_url,
                 meta={
                     "movie_data": movie_data,
+                    "playwright": True,
+                    "playwright_include_page": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI')
+                    ]
                 },
                 callback=self.parse_comments
             )
         else:
             yield movie_data
 
-    def parse_comments(self, response: scrapy.http.Response):
+    async def parse_comments(self, response: scrapy.http.Response):
+        page: playwright.async_api.Page = response.meta["playwright_page"]
+        await page.close()
+
         movie_data = response.meta["movie_data"]
         comments = []
 
@@ -111,15 +120,20 @@ class KinoboxSpider(scrapy.Spider):
 
         movie_data["comments"] = comments
 
-        # next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[@class = "Button_container__qRdIS Button_text__AlFCd Button_iconOnly__sFsND"]')
-        # if next_page_url:
-        #     yield response.follow(
-        #         next_page_url.xpath('@href').get(),
-        #         meta={
-        #             "movie_data": movie_data,
-        #             "playwright": True,
-        #         },
-        #         callback=self.parse_comments
-        #     )
-        # else:
-        #     yield movie_data
+        next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[@class = "Button_container__qRdIS Button_text__AlFCd Button_iconOnly__sFsND"]')
+        if next_page_url:
+            next_page_url =  next_page_url.xpath('@href').get()
+            yield scrapy.Request(
+                next_page_url,
+                meta={
+                    "movie_data": movie_data,
+                    "playwright": True,
+                    "playwright_include_page": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI')
+                    ]
+                },
+                callback=self.parse_comments
+            )
+        else:
+            yield movie_data

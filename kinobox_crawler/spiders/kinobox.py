@@ -26,11 +26,10 @@ class KinoboxSpider(scrapy.Spider):
         # "PLAYWRIGHT_LAUNCH_OPTIONS": {
         #     "headless": False,
         # },
-        "LOG_LEVEL": "ERROR",
+        "LOG_LEVEL": "INFO",
         'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'RETRY_TIMES': 5,  # Retry up to 5 times
         'RETRY_HTTP_CODES': [429],  # Retry on 429 status code
-        'PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT': 100000,
         'PLAYWRIGHT_ABORT_REQUEST': should_abort_request,
     }
 
@@ -103,8 +102,10 @@ class KinoboxSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state='attached'),
-                    ]
+                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI', state="visible"),
+                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state="visible"),
+                    ],
+                    "page_num": 1
                 },
                 callback=self.parse_comments
             )
@@ -113,9 +114,7 @@ class KinoboxSpider(scrapy.Spider):
 
     async def parse_comments(self, response: scrapy.http.Response):
         page: playwright.async_api.Page = response.meta["playwright_page"]
-        # link_container = await page.query_selector('.Pagination_container__PMgYg')
-        # await link_container.wait_for_element_state('stable')
-        # print(f"[PAGE] {link_container}")
+        current_page = response.meta.get("page_num", 1)
 
         movie_data = response.meta["movie_data"]
         movie_title = movie_data["title"]
@@ -142,15 +141,15 @@ class KinoboxSpider(scrapy.Spider):
                 "likes": likes
             })
 
-        self.movie_comments_map[movie_title].extend(comments)
+        self.logger.info(f"[COMMENTS {movie_title}] Got {len(comments)} comments on page {current_page}")
 
-        # movie_data["comments"] = comments
-        # yield movie_data
+        self.movie_comments_map[movie_title].extend(comments)
 
         next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]/../../@href').get()
 
         if next_page_url:
-            print(f"[NEXT PAGE {movie_title}] Going to next page: {next_page_url}")
+            self.logger.info(f"[NEXT PAGE {movie_title}] Going to next page: {next_page_url}")
+
             yield scrapy.Request(
                 next_page_url,
                 meta={
@@ -158,15 +157,15 @@ class KinoboxSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state='attached'),
-                    ]
+                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI', state="visible"),
+                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state="visible"),
+                    ],
+                    "page_num": current_page + 1
                 },
                 callback=self.parse_comments
             )
         else:
-            print(f"[FINISHED {movie_title}] Got all comments for movie, comments count: {len(self.movie_comments_map[movie_title])}")
-            # show whats stored in paginator
-            print(f"[FINISHED {movie_title}] Value in paginator element: {response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]').get()}")
+            self.logger.info(f"[FINISHED {movie_title}] Got all comments for movie, comments count: {len(self.movie_comments_map[movie_title])}")
             final_data = movie_data.copy()
             final_data["comments"] = self.movie_comments_map[movie_title]
             yield final_data

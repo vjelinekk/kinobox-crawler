@@ -103,7 +103,7 @@ class KinoboxSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI')
+                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state='attached'),
                     ]
                 },
                 callback=self.parse_comments
@@ -113,8 +113,16 @@ class KinoboxSpider(scrapy.Spider):
 
     async def parse_comments(self, response: scrapy.http.Response):
         page: playwright.async_api.Page = response.meta["playwright_page"]
+        # link_container = await page.query_selector('.Pagination_container__PMgYg')
+        # await link_container.wait_for_element_state('stable')
+        # print(f"[PAGE] {link_container}")
 
         movie_data = response.meta["movie_data"]
+        movie_title = movie_data["title"]
+
+        if movie_title not in self.movie_comments_map:
+            self.movie_comments_map[movie_title] = []
+
         comments = []
 
         for comment in response.xpath('//article[@class = "UserRatingItem_container__HudHI"]'):
@@ -134,21 +142,15 @@ class KinoboxSpider(scrapy.Spider):
                 "likes": likes
             })
 
-        movie_data["comments"] = comments
-        yield movie_data
+        self.movie_comments_map[movie_title].extend(comments)
 
-        next_page_urls = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[@class = "Button_container__qRdIS Button_text__AlFCd Button_iconOnly__sFsND"]/@href').getall()
+        # movie_data["comments"] = comments
+        # yield movie_data
 
-        current_page: str = response.url.split("/")[-1]
+        next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]/../../@href').get()
 
-        next_page_url = None
-        if len(next_page_urls) == 1 and next_page_urls[0].split("/")[-1] != current_page:
-            next_page_url = next_page_urls[0]
-        elif len(next_page_urls) >= 2:
-            next_page_url = next_page_urls[-1]
-
-        print(next_page_url)
         if next_page_url:
+            print(f"[NEXT PAGE {movie_title}] Going to next page: {next_page_url}")
             yield scrapy.Request(
                 next_page_url,
                 meta={
@@ -156,13 +158,17 @@ class KinoboxSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI')
+                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state='attached'),
                     ]
                 },
                 callback=self.parse_comments
             )
-        # else:
-        #     movie_data["comments"] = self.movie_comments_map[movie_data["title"]]
-        #     yield movie_data
+        else:
+            print(f"[FINISHED {movie_title}] Got all comments for movie, comments count: {len(self.movie_comments_map[movie_title])}")
+            # show whats stored in paginator
+            print(f"[FINISHED {movie_title}] Value in paginator element: {response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]').get()}")
+            final_data = movie_data.copy()
+            final_data["comments"] = self.movie_comments_map[movie_title]
+            yield final_data
 
         await page.close()

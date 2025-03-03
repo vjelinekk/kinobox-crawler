@@ -36,7 +36,8 @@ The movie data is stored in JSON format with each record containing the followin
         },
         // more comments...
     ]
-},
+}
+```
 
 ## Usage
 

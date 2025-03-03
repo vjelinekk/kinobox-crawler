@@ -4,15 +4,19 @@ from scrapy_playwright.page import PageMethod
 from kinobox_crawler.helpers.helpers import should_abort_request
 
 
-class KinoboxSpider(scrapy.Spider):
+class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
     """
-    Kinobox crawler that crawls through the best movies list and scrapes the movie details and comments.
+    Kinobox crawler that crawls through the sitemap and scrapes the movie details and comments.
     """
 
-    name = "kinobox"
+    name = "kinobox_sitemap"
 
-    start_urls = [
-        "https://www.kinobox.cz/zebricky/nejlepsi/filmy"
+    sitemap_urls = [
+        "https://www.kinobox.cz/sitemap.xml"
+    ]
+
+    sitemap_rules = [
+        ("/film/", "parse_overview"),
     ]
 
     custom_settings = {
@@ -26,42 +30,10 @@ class KinoboxSpider(scrapy.Spider):
         'RETRY_TIMES': 5,  # Retry up to 5 times
         'RETRY_HTTP_CODES': [429],  # Retry on 429 status code
         'PLAYWRIGHT_ABORT_REQUEST': should_abort_request,
-        'JOBDIR': 'crawls/kinobox_jobdir',
+        'JOBDIR': 'crawls/kinobox_sitemap_jobdir',
     }
 
     movie_comments_map = {}
-
-    def start_requests(self):
-        """
-        Start the requests for the best movies list.
-        """
-        for url in self.start_urls:
-            yield scrapy.Request(
-                url,
-                meta={
-                    "playwright": True
-                },
-                callback=self.parse
-            )
-
-    def parse(self, response: scrapy.http.Response):
-        """
-        Parse the best movies list and follow the links to the movie details.
-
-        Args:
-            response (scrapy.http.Response): The response from the best movies list.
-
-        Returns:
-            None
-        """
-        for movie in response.xpath('//main//li//div[@class = "FilmRankingItemExtended_metaRowWrapper__r3NGx"]'):
-            overview_url = movie.xpath(".//a[@data-context='title']/@href").get()
-
-            if overview_url:
-                yield response.follow(
-                    overview_url,
-                    callback=self.parse_overview
-                )
 
     def parse_overview(self, response: scrapy.http.Response):
         """

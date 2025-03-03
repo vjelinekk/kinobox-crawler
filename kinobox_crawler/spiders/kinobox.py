@@ -173,7 +173,6 @@ class KinoboxSpider(scrapy.Spider):
         next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]/../../@href').get()
 
         if next_page_url:
-
             yield scrapy.Request(
                 next_page_url,
                 meta={

@@ -59,21 +59,21 @@ Note: The **Sitemap Crawler** is significantly slower than the **Top Movies List
 ## Project Structure
 
 kinobox_crawler/
-├── crawls/
-│   ├── kinobox_jobdir/
-│   ├── kinobox_sitemap_jobdir/
-├── kinobox_crawler/
-│   ├── spiders/
-│   │   ├── kinobox.py
-│   │   ├── kinobox_sitemap.py
-│   ├── helpers/
-│   │   ├── helpers.py
-│   ├── pipelines.py
-│   ├── settings.py
-│   ├── items.py
-│   └─ middlewares.py
-├── scrapy.cfg
-└── requirements.txt
+|-- crawls/
+|   |-- kinobox_jobdir/
+|   |-- kinobox_sitemap_jobdir/
+|-- kinobox_crawler/
+|   |-- spiders/
+|   |   |-- kinobox.py
+|   |   |-- kinobox_sitemap.py
+|   |-- helpers/
+|   |   |-- helpers.py
+|   |-- pipelines.py
+|   |-- settings.py
+|   |-- items.py
+|   |-- middlewares.py
+|-- scrapy.cfg
+|-- requirements.txt
 
 ## Dependencies
 **Important**: It is suggested to use virtual environment to run the crawler.

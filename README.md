@@ -59,10 +59,10 @@ Note: The **Sitemap Crawler** is significantly slower than the **Top Movies List
 ## Project Structure
 
 ```
+crawls/
+├── kinobox_jobdir/
+└── kinobox_sitemap_jobdir/
 kinobox_crawler/
-├── crawls/
-│   ├── kinobox_jobdir/
-│   ├── kinobox_sitemap_jobdir/
 ├── kinobox_crawler/
 │   ├── spiders/
 │   │   ├── kinobox.py
@@ -73,8 +73,10 @@ kinobox_crawler/
 │   ├── settings.py
 │   ├── items.py
 │   └─ middlewares.py
-├── scrapy.cfg
-└── requirements.txt
+├── README.md
+├── movies.json
+├── requirements.txt
+└── scrapy.cfg
 ```
 
 ## Dependencies

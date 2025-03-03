@@ -1,13 +1,7 @@
 import scrapy
 import playwright
 from scrapy_playwright.page import PageMethod
-
-
-def should_abort_request(req):
-    if req.resource_type == 'image':
-        return True
-
-    return False
+from kinobox_crawler.helpers.helpers import should_abort_request
 
 
 class KinoboxSpider(scrapy.Spider):
@@ -23,14 +17,12 @@ class KinoboxSpider(scrapy.Spider):
             "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
             "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         },
-        # "PLAYWRIGHT_LAUNCH_OPTIONS": {
-        #     "headless": False,
-        # },
         "LOG_LEVEL": "INFO",
         'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
         'RETRY_TIMES': 5,  # Retry up to 5 times
         'RETRY_HTTP_CODES': [429],  # Retry on 429 status code
         'PLAYWRIGHT_ABORT_REQUEST': should_abort_request,
+        'JOBDIR': 'crawls/kinobox_jobdir',
     }
 
     movie_comments_map = {}
@@ -141,14 +133,12 @@ class KinoboxSpider(scrapy.Spider):
                 "likes": likes
             })
 
-        self.logger.info(f"[COMMENTS {movie_title}] Got {len(comments)} comments on page {current_page}")
 
         self.movie_comments_map[movie_title].extend(comments)
 
         next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]/../../@href').get()
 
         if next_page_url:
-            self.logger.info(f"[NEXT PAGE {movie_title}] Going to next page: {next_page_url}")
 
             yield scrapy.Request(
                 next_page_url,

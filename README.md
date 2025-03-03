@@ -34,7 +34,7 @@ The movie data is stored in JSON format with each record containing the followin
             "text": "Comment text",
             "likes": "0"
         },
-        ...
+        // more comments...
     ]
 },
 

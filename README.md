@@ -41,20 +41,46 @@ The movie data is stored in JSON format with each record containing the followin
 
 ## Usage
 
+### Running the Crawler
 There are two crawlers available in this project:
 1. **Top Movies List Crawler**: This crawler scrapes data from the list of top movies on kinobox.cz.
 * To run the Top Movies List Crawler, use the following command:
 ```bash
-scrapy crawl kinobox -o movies.json
+python crawler.py start kinobox
 ```
 
 2. **Sitemap Crawler**: This crawler scrapes data from the sitemaps on kinobox.cz.
 * To run the Sitemap Crawler, use the following command:
 ```bash
-scrapy crawl kinobox_sitemap -o movies_sitemap.json
+python crawler.py start kinobox_sitemap
 ```
 
-Note: The **Sitemap Crawler** is significantly slower than the **Top Movies List Crawler**
+### Stopping the Crawler
+Because the crawler uses `scrapy_playwright` stoping it with `Ctrl+C` may not always work. To stop the crawler, use the following command:
+```bash
+python crawler.py stop
+```
+Then wait for the crawler to stop.
+
+This uses telnet connectiong to the running crawler and stops it gracefully.
+Telnet is configured this way:
+```python
+TELNETCONSOLE_PORT = [6025]
+TELNETCONSOLE_USERNAME = "scrapy"
+TELNETCONSOLE_PASSWORD = "1111"
+```
+
+If the command does not work for you (e.g. different operating system I used MacOS),
+you can use telnet directly:
+```bash
+telnet localhost 6025
+```
+After you are connected, you can stop the crawler by typing:
+```bash
+Username: scrapy
+Password: 1111
+>>>engine.stop()
+```
 
 ## Project Structure
 

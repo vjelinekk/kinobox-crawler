@@ -1,10 +1,11 @@
-import scrapy
-import playwright
-from scrapy_playwright.page import PageMethod
+from scrapy.http.response import Response
+from scrapy import Request
+from scrapy.spiders import SitemapSpider
+from playwright.async_api import Page
 from kinobox_crawler.helpers.helpers import should_abort_request
 
 
-class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
+class KinoboxSitemapSpider(SitemapSpider):
     """
     Kinobox crawler that crawls through the sitemap and scrapes the movie details and comments.
     """
@@ -31,19 +32,52 @@ class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
         'RETRY_HTTP_CODES': [429],  # Retry on 429 status code
         'PLAYWRIGHT_ABORT_REQUEST': should_abort_request,
         'JOBDIR': 'crawls/kinobox_sitemap_jobdir',
+        'TELNETCONSOLE_USERNAME': "scrapy",
+        'TELNETCONSOLE_PASSWORD': "1111",
+        'TELNETCONSOLE_PORT': [6025]
     }
 
     movie_comments_map = {}
 
-    def parse_overview(self, response: scrapy.http.Response):
+    def parse_overview(self, response: Response) -> None:
         """
         Parse the movie details and follow the link to the comments.
 
         Args:
-            response (scrapy.http.Response): The response from the movie details.
+            response (Response): The response from the movie details.
 
         Returns:
             None
+        """
+        movie_data = self.extract_movie_data(response)
+        self.logger.info(f"[STARTED {movie_data['title']} url: {response.url}] Started scraping movie details")
+        comments_url = response.xpath('//ul[@role="list"]/li//i[@title="Komentáře"]/../../../@href').get()
+
+        if comments_url:
+            comments_url = response.urljoin(comments_url)
+            yield Request(
+                comments_url,
+                meta={
+                    "movie_data": movie_data,
+                    "playwright": True,
+                    "playwright_include_page": True,
+                    "page_num": 1,
+                    "url": comments_url
+                },
+                callback=self.parse_comments
+            )
+        else:
+            yield movie_data
+
+    def extract_movie_data(self, response: Response) -> dict:
+        """
+        Extract the movie data from the response.
+
+        Args:
+            response (Response): The response from the movie details.
+
+        Returns:
+            dict: The movie data.
         """
         title = response.xpath('normalize-space(//h1)').get()
         title_eng = response.xpath('normalize-space(//div[@class = "FilmLayout_metadata__7nnz4"]/h2)').get()
@@ -68,7 +102,7 @@ class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
         screenwriter = roles[1] if len(roles) > 1 else None
         music = roles[2] if len(roles) > 2 else None
 
-        movie_data = {
+        return {
             "title": title,
             "title_eng": title_eng,
             "year": year,
@@ -81,42 +115,78 @@ class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
             "music": music
         }
 
-        comments_url = response.xpath('//ul[@role="list"]/li//i[@title="Komentáře"]/../../../@href').get()
-        if comments_url:
-            comments_url = response.urljoin(comments_url)
-            yield scrapy.Request(
-                comments_url,
-                meta={
-                    "movie_data": movie_data,
-                    "playwright": True,
-                    "playwright_include_page": True,
-                    "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI', state="visible"),
-                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state="visible"),
-                    ],
-                    "page_num": 1
-                },
-                callback=self.parse_comments
-            )
-        else:
-            yield movie_data
-
-    async def parse_comments(self, response: scrapy.http.Response):
+    async def parse_comments(self, response: Response) -> None:
         """
         Parse the comments for the movie.
 
         Args:
-            response (scrapy.http.Response): The response from the comments page.
+            response (Response): The response from the comments page.
 
         Returns:
             None
         """
-        page: playwright.async_api.Page = response.meta["playwright_page"]
+        page: Page = response.meta["playwright_page"]
         current_page = response.meta.get("page_num", 1)
 
         movie_data = response.meta["movie_data"]
         movie_title = movie_data["title"]
 
+        try:
+            await page.wait_for_selector('.Pagination_container__PMgYg a:not([disabled]) i.Pagination_nextIcon__H_WMv', state="visible")
+            await page.wait_for_selector('.UserRatingItem_container__HudHI', state="visible")
+
+            self.extract_comments(response, movie_title)
+
+            next_page_url = await page.evaluate('document.querySelector(".Pagination_container__PMgYg a:not([disabled]) i.Pagination_nextIcon__H_WMv").closest("a").href')
+
+            if next_page_url:
+                yield Request(
+                    next_page_url,
+                    meta={
+                        "movie_data": movie_data,
+                        "playwright": True,
+                        "playwright_include_page": True,
+                        "page_num": current_page + 1,
+                        "url": next_page_url
+                    },
+                    callback=self.parse_comments
+                )
+            else:
+                yield self.finalize_movie_data(movie_data, movie_title)
+        except Exception:
+            # it is still possible that there are some comments but no next page button
+            self.extract_comments(response, movie_title)
+            yield self.finalize_movie_data(movie_data, movie_title)
+
+        await page.close()
+
+    def finalize_movie_data(self, movie_data: dict, movie_title: str) -> dict:
+        """
+        Add the comments to the movie data.
+
+        Args:
+            movie_data (dict): The movie data.
+            movie_title (str): The title of the movie.
+
+        Returns:
+            dict: The movie data with comments.
+        """
+        self.logger.info(f"[FINISHED {movie_title}] Got all comments for movie, comments count: {len(self.movie_comments_map[movie_title])}")
+        movie_data["comments"] = self.movie_comments_map[movie_title]
+
+        return movie_data
+
+    def extract_comments(self, response: Response, movie_title: str) -> None:
+        """
+        Read the comments from the response.
+
+        Args:
+            response (Response): The response from the comments page.
+            movie_title (str): The title of the movie.
+
+        Returns:
+            None
+        """
         if movie_title not in self.movie_comments_map:
             self.movie_comments_map[movie_title] = []
 
@@ -139,31 +209,4 @@ class KinoboxSitemapSpider(scrapy.spiders.SitemapSpider):
                 "likes": likes
             })
 
-
         self.movie_comments_map[movie_title].extend(comments)
-
-        next_page_url = response.xpath('//div[@class = "Pagination_container__PMgYg"]//a[not(@disabled)]//i[@class = "Icon_container__te_GQ Icon_chevron-down__pX_uW Pagination_nextIcon__H_WMv"]/../../@href').get()
-
-        if next_page_url:
-
-            yield scrapy.Request(
-                next_page_url,
-                meta={
-                    "movie_data": movie_data,
-                    "playwright": True,
-                    "playwright_include_page": True,
-                    "playwright_page_methods": [
-                        PageMethod("wait_for_selector", '.UserRatingItem_container__HudHI', state="visible"),
-                        PageMethod("wait_for_selector", '.Pagination_container__PMgYg', state="visible"),
-                    ],
-                    "page_num": current_page + 1
-                },
-                callback=self.parse_comments
-            )
-        else:
-            self.logger.info(f"[FINISHED {movie_title}] Got all comments for movie, comments count: {len(self.movie_comments_map[movie_title])}")
-            final_data = movie_data.copy()
-            final_data["comments"] = self.movie_comments_map[movie_title]
-            yield final_data
-
-        await page.close()
